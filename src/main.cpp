@@ -322,7 +322,7 @@ void setup() {
     delay(1000);
 
     // Always output ready message on startup
-    Serial.println("{\"type\":\"ready\",\"device\":\"ATOM Lite BLE Gateway\",\"version\":\"1.0.0\"}");
+    Serial.printf("{\"type\":\"ready\",\"device\":\"ATOM Lite BLE Gateway\",\"version\":\"%s\"}\n", VERSION);
 
     debugPrint("{\"type\":\"startup\",\"device\":\"ATOM Lite BLE Gateway\"}");
 
