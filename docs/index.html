@@ -157,8 +157,31 @@
         <h3>動作要件</h3>
         <ul>
             <li>Chrome, Edge, Opera のいずれか（Web Serial API対応ブラウザ）</li>
-            <li>ATOM Lite用USBドライバ（CH340/CP2104）</li>
+            <li>ATOM Lite用USBドライバ（下記リンクからインストール）</li>
         </ul>
+    </div>
+
+    <div class="card">
+        <h2>USBドライバ</h2>
+        <p>ATOM Liteが認識されない場合は、以下のドライバをインストールしてください。</p>
+        <div class="device-info">
+            <div>
+                <strong>FTDI (FT232)</strong>
+                <a href="https://ftdichip.com/drivers/vcp-drivers/" target="_blank">FTDI VCP Drivers</a>
+            </div>
+            <div>
+                <strong>CP210x (Silicon Labs)</strong>
+                <a href="https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers" target="_blank">CP210x Drivers</a>
+            </div>
+            <div>
+                <strong>CH340/CH341</strong>
+                <a href="https://www.wch-ic.com/downloads/CH341SER_EXE.html" target="_blank">CH340 Driver (Windows)</a><br>
+                <a href="https://www.wch-ic.com/downloads/CH341SER_MAC_ZIP.html" target="_blank">CH340 Driver (Mac)</a>
+            </div>
+        </div>
+        <p style="margin-top: 12px; font-size: 14px; color: #666;">
+            ※ ATOM LiteはFTDIチップを使用しています。通常はOS標準ドライバで認識されます。
+        </p>
     </div>
 
     <div class="warning">
