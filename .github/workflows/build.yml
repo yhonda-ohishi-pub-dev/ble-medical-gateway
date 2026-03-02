@@ -3,10 +3,6 @@ name: Build and Deploy Firmware
 on:
   push:
     branches: [master]
-    paths:
-      - 'src/**'
-      - 'platformio.ini'
-      - '.github/workflows/build.yml'
   workflow_dispatch:
 
 jobs:
