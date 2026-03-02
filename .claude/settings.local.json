@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(timeout 15 ~/.platformio/penv/Scripts/pio.exe device monitor:*)",
+      "Bash(~/.platformio/penv/Scripts/pio.exe run:*)"
+    ]
+  }
+}
