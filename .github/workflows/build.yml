@@ -24,7 +24,7 @@ jobs:
       - name: Extract version from platformio.ini
         id: version
         run: |
-          VERSION=$(grep "custom_version" platformio.ini | cut -d'=' -f2 | tr -d ' ')
+          VERSION=$(grep "^custom_version" platformio.ini | sed 's/custom_version *= *//' | tr -d ' \r')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Version: $VERSION"
 
