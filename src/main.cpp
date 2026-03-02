@@ -48,6 +48,9 @@ bool bloodPressureFound = false;
 bool thermometerConnected = false;
 bool bloodPressureConnected = false;
 
+// Serial connection state
+bool serialConnected = false;
+
 // BLE objects
 BLEScan* pBLEScan;
 BLEClient* pThermometerClient;
@@ -339,6 +342,14 @@ void setup() {
 
 void loop() {
     M5.update();
+
+    // Check serial connection (DTR signal from host)
+    if (Serial && !serialConnected) {
+        serialConnected = true;
+        Serial.println("{\"type\":\"ready\",\"device\":\"ATOM Lite BLE Gateway\",\"version\":\"1.0.0\"}");
+    } else if (!Serial && serialConnected) {
+        serialConnected = false;
+    }
 
     // Button press to restart scan and toggle debug mode
     if (M5.Btn.wasPressed()) {
