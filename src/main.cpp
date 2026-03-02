@@ -101,6 +101,10 @@ void parseBloodPressure(uint8_t* data, size_t length, float* systolic, float* di
 
     uint8_t flags = data[0];
     bool isKPa = flags & 0x01;
+    bool hasTimestamp = flags & 0x02;
+    bool hasPulseRate = flags & 0x04;
+    bool hasUserId = flags & 0x08;
+    bool hasMeasurementStatus = flags & 0x10;
 
     // IEEE 11073 SFLOAT format (16-bit)
     auto parseSFLOAT = [](uint8_t lo, uint8_t hi) -> float {
@@ -113,11 +117,14 @@ void parseBloodPressure(uint8_t* data, size_t length, float* systolic, float* di
 
     *systolic = parseSFLOAT(data[1], data[2]);
     *diastolic = parseSFLOAT(data[3], data[4]);
-    float map = parseSFLOAT(data[5], data[6]); // Mean Arterial Pressure
+    // Bytes 5-6: Mean Arterial Pressure (not used in output)
 
-    // Pulse rate is optional (check flags bit 2)
-    if ((flags & 0x04) && length >= 15) {
-        *pulse = parseSFLOAT(data[13], data[14]);
+    // Calculate pulse rate offset based on optional fields present
+    // Base offset after systolic/diastolic/MAP = 7
+    size_t offset = 7;
+    if (hasTimestamp) offset += 7;  // Timestamp is 7 bytes
+    if (hasPulseRate && (offset + 2) <= length) {
+        *pulse = parseSFLOAT(data[offset], data[offset + 1]);
     } else {
         *pulse = -1.0;
     }
