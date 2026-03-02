@@ -1,0 +1,56 @@
+name: Build and Deploy Firmware
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'src/**'
+      - 'platformio.ini'
+      - '.github/workflows/build.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install PlatformIO
+        run: pip install platformio
+
+      - name: Extract version from platformio.ini
+        id: version
+        run: |
+          VERSION=$(grep "custom_version" platformio.ini | cut -d'=' -f2 | tr -d ' ')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      - name: Build firmware
+        run: pio run
+
+      - name: Copy firmware to docs
+        run: |
+          cp .pio/build/m5stack-atom/bootloader.bin docs/firmware/
+          cp .pio/build/m5stack-atom/partitions.bin docs/firmware/
+          cp .pio/build/m5stack-atom/firmware.bin docs/firmware/
+
+      - name: Update manifest.json version
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" docs/manifest.json
+          cat docs/manifest.json
+
+      - name: Commit and push firmware
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/firmware/*.bin docs/manifest.json
+          git diff --staged --quiet || git commit -m "Build: update firmware to v${{ steps.version.outputs.version }}"
+          git push
