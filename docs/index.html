@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BLE Medical Gateway - Firmware Writer</title>
+    <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+            color: #333;
+        }
+        h1 {
+            color: #1a73e8;
+            border-bottom: 2px solid #1a73e8;
+            padding-bottom: 10px;
+        }
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            margin: 20px 0;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .card h2 {
+            margin-top: 0;
+            color: #333;
+        }
+        .requirements {
+            background: #e8f5e9;
+            border-left: 4px solid #4caf50;
+            padding: 16px;
+            margin: 16px 0;
+        }
+        .requirements h3 {
+            margin-top: 0;
+            color: #2e7d32;
+        }
+        .warning {
+            background: #fff3e0;
+            border-left: 4px solid #ff9800;
+            padding: 16px;
+            margin: 16px 0;
+        }
+        .warning h3 {
+            margin-top: 0;
+            color: #e65100;
+        }
+        .install-section {
+            text-align: center;
+            padding: 40px 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 12px;
+            color: white;
+        }
+        .install-section h2 {
+            color: white;
+            margin-bottom: 20px;
+        }
+        esp-web-install-button {
+            --esp-tools-button-color: #4caf50;
+            --esp-tools-button-text-color: white;
+        }
+        .steps {
+            counter-reset: step;
+        }
+        .steps li {
+            list-style: none;
+            margin: 16px 0;
+            padding-left: 50px;
+            position: relative;
+        }
+        .steps li::before {
+            counter-increment: step;
+            content: counter(step);
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 32px;
+            height: 32px;
+            background: #1a73e8;
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+        .device-info {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-top: 16px;
+        }
+        .device-info div {
+            background: #f8f9fa;
+            padding: 12px;
+            border-radius: 8px;
+        }
+        .device-info strong {
+            display: block;
+            color: #666;
+            font-size: 12px;
+            margin-bottom: 4px;
+        }
+        footer {
+            text-align: center;
+            margin-top: 40px;
+            color: #666;
+            font-size: 14px;
+        }
+        footer a {
+            color: #1a73e8;
+        }
+    </style>
+</head>
+<body>
+    <h1>BLE Medical Gateway</h1>
+    <p>ATOM Lite (ESP32) 用 BLE医療機器ゲートウェイ ファームウェア書き込みツール</p>
+
+    <div class="card">
+        <h2>対応機器</h2>
+        <div class="device-info">
+            <div>
+                <strong>マイコン</strong>
+                M5Stack ATOM Lite
+            </div>
+            <div>
+                <strong>体温計</strong>
+                ニプロ NT-100B
+            </div>
+            <div>
+                <strong>血圧計</strong>
+                ニプロ NBP-1BLE
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>書き込み手順</h2>
+        <ol class="steps">
+            <li>ATOM LiteをUSBでPCに接続</li>
+            <li>下の「Install」ボタンをクリック</li>
+            <li>シリアルポートを選択（COM○ または /dev/ttyUSB○）</li>
+            <li>書き込み完了を待つ（約30秒）</li>
+        </ol>
+    </div>
+
+    <div class="requirements">
+        <h3>動作要件</h3>
+        <ul>
+            <li>Chrome, Edge, Opera のいずれか（Web Serial API対応ブラウザ）</li>
+            <li>ATOM Lite用USBドライバ（CH340/CP2104）</li>
+        </ul>
+    </div>
+
+    <div class="warning">
+        <h3>注意事項</h3>
+        <ul>
+            <li>書き込み中はUSBケーブルを抜かないでください</li>
+            <li>書き込み後、ATOM Liteは自動的に再起動します</li>
+            <li>LEDが青色に点灯すればBLEスキャン開始</li>
+        </ul>
+    </div>
+
+    <div class="card install-section">
+        <h2>ファームウェアをインストール</h2>
+        <esp-web-install-button manifest="manifest.json">
+            <button slot="activate">Install BLE Medical Gateway</button>
+            <span slot="unsupported">
+                お使いのブラウザはWeb Serial APIに対応していません。<br>
+                Chrome, Edge, または Opera をお使いください。
+            </span>
+            <span slot="not-allowed">
+                シリアルポートへのアクセスが許可されていません。
+            </span>
+        </esp-web-install-button>
+    </div>
+
+    <div class="card">
+        <h2>書き込み後の動作確認</h2>
+        <ul>
+            <li><strong>青色LED</strong>: BLEスキャン中</li>
+            <li><strong>緑色LED</strong>: 機器と接続済み</li>
+            <li><strong>白色LED</strong>: データ受信</li>
+            <li><strong>赤色LED</strong>: エラー</li>
+        </ul>
+        <p>体温計または血圧計で測定すると、シリアルポートにJSON形式でデータが出力されます。</p>
+    </div>
+
+    <footer>
+        <p>
+            <a href="https://github.com/yhonda-ohishi-pub-dev/ble-medical-gateway" target="_blank">GitHub Repository</a>
+        </p>
+    </footer>
+</body>
+</html>
