@@ -55,6 +55,15 @@ const int MIN_RSSI = -80;
 unsigned long lastHeartbeat = 0;
 const unsigned long HEARTBEAT_INTERVAL = 10000;
 
+// Serial command buffer
+char cmdBuffer[256];
+int cmdBufferPos = 0;
+
+// Auto-reset after data received
+bool pendingReset = false;
+unsigned long resetAfterMs = 0;
+const unsigned long RESET_DELAY = 2000; // 2秒後に自動リセット
+
 // BLE objects
 BLEScan* pBLEScan;
 BLEClient* pThermometerClient;
@@ -152,6 +161,10 @@ void temperatureNotifyCallback(BLERemoteCharacteristic* pCharacteristic, uint8_t
     // Output JSON to serial
     Serial.printf("{\"type\":\"temperature\",\"value\":%.1f,\"unit\":\"celsius\"}\n", temperature);
 
+    // Schedule auto-reset to be ready for next device
+    pendingReset = true;
+    resetAfterMs = millis() + RESET_DELAY;
+
     delay(100);
     setLED(COLOR_CONNECTED);
 }
@@ -171,6 +184,10 @@ void bloodPressureNotifyCallback(BLERemoteCharacteristic* pCharacteristic, uint8
         Serial.printf("{\"type\":\"blood_pressure\",\"systolic\":%.0f,\"diastolic\":%.0f,\"unit\":\"mmHg\"}\n",
                       systolic, diastolic);
     }
+
+    // Schedule auto-reset to be ready for next device
+    pendingReset = true;
+    resetAfterMs = millis() + RESET_DELAY;
 
     delay(100);
     setLED(COLOR_CONNECTED);
@@ -225,8 +242,8 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
             }
         }
 
-        // Stop scan early if both devices found
-        if (thermometerFound && bloodPressureFound) {
+        // Stop scan early if either device found (片方ずつ使う運用)
+        if (thermometerFound || bloodPressureFound) {
             pBLEScan->stop();
         }
     }
@@ -259,7 +276,7 @@ bool connectToThermometer() {
             Serial.println("{\"type\":\"error\",\"message\":\"Failed to connect to thermometer after 3 attempts\"}");
             return false;
         }
-        delay(1000);
+        delay(500);
     }
     if (!connected) return false;
 
@@ -323,7 +340,7 @@ bool connectToBloodPressure() {
             debugPrint("{\"type\":\"error\",\"message\":\"Failed to connect to blood pressure monitor after 3 attempts\"}");
             return false;
         }
-        delay(1000);
+        delay(500);
     }
 
     // Get the service
@@ -356,6 +373,43 @@ bool connectToBloodPressure() {
     Serial.println("{\"type\":\"connected\",\"device\":\"blood_pressure\"}");
     bloodPressureConnected = true;
     return true;
+}
+
+// Reset all connections and restart scanning
+void resetAndRescan() {
+    if (pThermometerClient != nullptr && pThermometerClient->isConnected()) {
+        pThermometerClient->disconnect();
+    }
+    if (pBloodPressureClient != nullptr && pBloodPressureClient->isConnected()) {
+        pBloodPressureClient->disconnect();
+    }
+    thermometerFound = false;
+    bloodPressureFound = false;
+    thermometerConnected = false;
+    bloodPressureConnected = false;
+    pendingReset = false;
+    setLED(COLOR_SCANNING);
+    Serial.println("{\"type\":\"reset\",\"message\":\"Scan restarted\"}");
+}
+
+// Process serial commands from frontend
+void processSerialCommand() {
+    while (Serial.available()) {
+        char c = Serial.read();
+        if (c == '\n' || c == '\r') {
+            if (cmdBufferPos > 0) {
+                cmdBuffer[cmdBufferPos] = '\0';
+                String cmd = String(cmdBuffer);
+                cmd.trim();
+                if (cmd.indexOf("\"reset\"") >= 0) {
+                    resetAndRescan();
+                }
+                cmdBufferPos = 0;
+            }
+        } else if (cmdBufferPos < (int)sizeof(cmdBuffer) - 1) {
+            cmdBuffer[cmdBufferPos++] = c;
+        }
+    }
 }
 
 void setup() {
@@ -394,30 +448,27 @@ void setup() {
 void loop() {
     M5.update();
 
-    // Button press to restart scan and toggle debug mode
-    if (M5.Btn.wasPressed()) {
-        debugPrint("{\"type\":\"status\",\"message\":\"Button pressed, restarting scan...\"}");
-        thermometerFound = false;
-        bloodPressureFound = false;
-        thermometerConnected = false;
-        bloodPressureConnected = false;
-        if (pThermometerClient != nullptr && pThermometerClient->isConnected()) {
-            pThermometerClient->disconnect();
-        }
-        if (pBloodPressureClient != nullptr && pBloodPressureClient->isConnected()) {
-            pBloodPressureClient->disconnect();
-        }
-        setLED(COLOR_SCANNING);
+    // Process serial commands from frontend
+    processSerialCommand();
+
+    // Auto-reset after data received (ready for next measurement)
+    if (pendingReset && millis() >= resetAfterMs) {
+        resetAndRescan();
     }
 
-    // Scan for devices if not found
-    if (!thermometerFound || !bloodPressureFound) {
+    // Button press to restart scan
+    if (M5.Btn.wasPressed()) {
+        resetAndRescan();
+    }
+
+    // Scan for devices if neither connected
+    if (!thermometerConnected && !bloodPressureConnected) {
         setLED(COLOR_SCANNING);
-        BLEScanResults foundDevices = pBLEScan->start(5, false); // Scan for 5 seconds
+        BLEScanResults foundDevices = pBLEScan->start(3, false); // Scan for 3 seconds
         pBLEScan->clearResults();
-        // Cooldown if nothing found to reduce CPU usage
+        // Short cooldown between scans
         if (!thermometerFound && !bloodPressureFound) {
-            delay(2000);
+            delay(500);
         }
     }
 
@@ -457,10 +508,10 @@ void loop() {
         lastHeartbeat = millis();
     }
 
-    // Reduce CPU usage when fully connected
-    if (thermometerConnected && bloodPressureConnected) {
-        delay(1000);
-    } else {
+    // Reduce CPU usage when connected (waiting for notification)
+    if (thermometerConnected || bloodPressureConnected) {
         delay(100);
+    } else {
+        delay(50);
     }
 }
