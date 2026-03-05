@@ -48,6 +48,13 @@ bool bloodPressureFound = false;
 bool thermometerConnected = false;
 bool bloodPressureConnected = false;
 
+// RSSI threshold - ignore weak signals
+const int MIN_RSSI = -80;
+
+// Heartbeat
+unsigned long lastHeartbeat = 0;
+const unsigned long HEARTBEAT_INTERVAL = 10000;
+
 // BLE objects
 BLEScan* pBLEScan;
 BLEClient* pThermometerClient;
@@ -172,6 +179,9 @@ void bloodPressureNotifyCallback(BLERemoteCharacteristic* pCharacteristic, uint8
 // BLE Advertised Device Callback
 class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
     void onResult(BLEAdvertisedDevice advertisedDevice) {
+        // Ignore weak signals
+        if (advertisedDevice.getRSSI() < MIN_RSSI) return;
+
         // Scan results only in debug mode
         debugPrintf("{\"type\":\"scan\",\"name\":\"%s\",\"address\":\"%s\",\"rssi\":%d}\n",
                       advertisedDevice.getName().c_str(),
@@ -182,6 +192,7 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
         if (advertisedDevice.haveServiceUUID() &&
             advertisedDevice.isAdvertisingService(healthThermometerServiceUUID)) {
             debugPrint("{\"type\":\"found\",\"device\":\"thermometer\"}");
+            if (thermometerDevice) delete thermometerDevice;
             thermometerDevice = new BLEAdvertisedDevice(advertisedDevice);
             thermometerFound = true;
         }
@@ -190,6 +201,7 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
         if (advertisedDevice.haveServiceUUID() &&
             advertisedDevice.isAdvertisingService(bloodPressureServiceUUID)) {
             debugPrint("{\"type\":\"found\",\"device\":\"blood_pressure\"}");
+            if (bloodPressureDevice) delete bloodPressureDevice;
             bloodPressureDevice = new BLEAdvertisedDevice(advertisedDevice);
             bloodPressureFound = true;
         }
@@ -199,6 +211,7 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
         if (name.indexOf("NT-100") >= 0 || name.indexOf("Thermo") >= 0) {
             if (!thermometerFound) {
                 debugPrint("{\"type\":\"found\",\"device\":\"thermometer\",\"by\":\"name\"}");
+                if (thermometerDevice) delete thermometerDevice;
                 thermometerDevice = new BLEAdvertisedDevice(advertisedDevice);
                 thermometerFound = true;
             }
@@ -206,9 +219,15 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
         if (name.indexOf("NBP-1") >= 0 || name.indexOf("BP") >= 0 || name.indexOf("Blood") >= 0) {
             if (!bloodPressureFound) {
                 debugPrint("{\"type\":\"found\",\"device\":\"blood_pressure\",\"by\":\"name\"}");
+                if (bloodPressureDevice) delete bloodPressureDevice;
                 bloodPressureDevice = new BLEAdvertisedDevice(advertisedDevice);
                 bloodPressureFound = true;
             }
+        }
+
+        // Stop scan early if both devices found
+        if (thermometerFound && bloodPressureFound) {
+            pBLEScan->stop();
         }
     }
 };
@@ -219,12 +238,30 @@ bool connectToThermometer() {
 
     debugPrint("{\"type\":\"connecting\",\"device\":\"thermometer\"}");
 
+    // Cleanup previous client
+    if (pThermometerClient != nullptr) {
+        if (pThermometerClient->isConnected()) pThermometerClient->disconnect();
+        delete pThermometerClient;
+        pThermometerClient = nullptr;
+    }
+
     pThermometerClient = BLEDevice::createClient();
 
-    if (!pThermometerClient->connect(thermometerDevice)) {
-        debugPrint("{\"type\":\"error\",\"message\":\"Failed to connect to thermometer\"}");
-        return false;
+    // Retry up to 3 times
+    bool connected = false;
+    for (int retry = 0; retry < 3; retry++) {
+        debugPrintf("{\"type\":\"debug\",\"message\":\"Thermometer connect attempt %d\"}\n", retry + 1);
+        if (pThermometerClient->connect(thermometerDevice)) {
+            connected = true;
+            break;
+        }
+        if (retry == 2) {
+            Serial.println("{\"type\":\"error\",\"message\":\"Failed to connect to thermometer after 3 attempts\"}");
+            return false;
+        }
+        delay(1000);
     }
+    if (!connected) return false;
 
     // Get the service
     BLERemoteService* pService = pThermometerClient->getService(healthThermometerServiceUUID);
@@ -253,7 +290,7 @@ bool connectToThermometer() {
         debugPrint("{\"type\":\"error\",\"message\":\"Characteristic cannot notify or indicate\"}");
     }
 
-    debugPrint("{\"type\":\"connected\",\"device\":\"thermometer\"}");
+    Serial.println("{\"type\":\"connected\",\"device\":\"thermometer\"}");
     thermometerConnected = true;
     return true;
 }
@@ -264,6 +301,13 @@ bool connectToBloodPressure() {
 
     debugPrint("{\"type\":\"connecting\",\"device\":\"blood_pressure\"}");
     debugPrintf("{\"type\":\"debug\",\"address\":\"%s\"}\n", bloodPressureDevice->getAddress().toString().c_str());
+
+    // Cleanup previous client
+    if (pBloodPressureClient != nullptr) {
+        if (pBloodPressureClient->isConnected()) pBloodPressureClient->disconnect();
+        delete pBloodPressureClient;
+        pBloodPressureClient = nullptr;
+    }
 
     pBloodPressureClient = BLEDevice::createClient();
     pBloodPressureClient->setClientCallbacks(nullptr);
@@ -309,7 +353,7 @@ bool connectToBloodPressure() {
         debugPrint("{\"type\":\"error\",\"message\":\"BP characteristic cannot notify or indicate\"}");
     }
 
-    debugPrint("{\"type\":\"connected\",\"device\":\"blood_pressure\"}");
+    Serial.println("{\"type\":\"connected\",\"device\":\"blood_pressure\"}");
     bloodPressureConnected = true;
     return true;
 }
@@ -371,6 +415,10 @@ void loop() {
         setLED(COLOR_SCANNING);
         BLEScanResults foundDevices = pBLEScan->start(5, false); // Scan for 5 seconds
         pBLEScan->clearResults();
+        // Cooldown if nothing found to reduce CPU usage
+        if (!thermometerFound && !bloodPressureFound) {
+            delay(2000);
+        }
     }
 
     // Connect to found devices
@@ -389,16 +437,30 @@ void loop() {
 
     // Check connection status periodically
     if (thermometerConnected && pThermometerClient != nullptr && !pThermometerClient->isConnected()) {
-        debugPrint("{\"type\":\"disconnected\",\"device\":\"thermometer\"}");
+        Serial.println("{\"type\":\"disconnected\",\"device\":\"thermometer\"}");
         thermometerConnected = false;
         thermometerFound = false;
     }
 
     if (bloodPressureConnected && pBloodPressureClient != nullptr && !pBloodPressureClient->isConnected()) {
-        debugPrint("{\"type\":\"disconnected\",\"device\":\"blood_pressure\"}");
+        Serial.println("{\"type\":\"disconnected\",\"device\":\"blood_pressure\"}");
         bloodPressureConnected = false;
         bloodPressureFound = false;
     }
 
-    delay(100);
+    // Heartbeat every 10 seconds
+    if (millis() - lastHeartbeat >= HEARTBEAT_INTERVAL) {
+        Serial.printf("{\"type\":\"heartbeat\",\"uptime\":%lu,\"thermo\":%s,\"bp\":%s}\n",
+            millis() / 1000,
+            thermometerConnected ? "true" : "false",
+            bloodPressureConnected ? "true" : "false");
+        lastHeartbeat = millis();
+    }
+
+    // Reduce CPU usage when fully connected
+    if (thermometerConnected && bloodPressureConnected) {
+        delay(1000);
+    } else {
+        delay(100);
+    }
 }
