@@ -1,0 +1,15 @@
+{
+  "name": "BLE Medical Gateway (Rust PoC, experimental)",
+  "version": "0.1.0-poc",
+  "home_assistant_domain": "",
+  "funding_url": "",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32",
+      "parts": [
+        { "path": "firmware-rust/firmware-rust-merged.bin", "offset": 0 }
+      ]
+    }
+  ]
+}
