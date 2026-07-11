@@ -66,6 +66,9 @@ jobs:
     # continue-on-error にする (ci-workflows の auto-merge reusable の
     # verify_all_checks は conclusion in [success, neutral, skipped] を許容)。
     continue-on-error: true
+    env:
+      # cache key と install コマンドの二重管理を避けるため一箇所にまとめる
+      ESPFLASH_VERSION: '4.5.0'
 
     steps:
       - name: Checkout
@@ -104,15 +107,15 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cargo/bin/espflash
-          key: espflash-4.5.0-${{ runner.os }}
+          key: espflash-${{ env.ESPFLASH_VERSION }}-${{ runner.os }}
 
       - name: Install espflash
         if: steps.cache-espflash.outputs.cache-hit != 'true'
-        run: cargo install espflash --version 4.5.0 --locked
+        run: cargo install espflash --version "$ESPFLASH_VERSION" --locked
 
       - name: Build
         working-directory: firmware-rust
-        run: cargo build --release
+        run: cargo build --release --locked
 
       - name: Save merged flashable image
         working-directory: firmware-rust
