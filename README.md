@@ -72,6 +72,11 @@ bool debugMode = true;  // デバッグ出力ON
 2. 体温計/血圧計で測定
 3. シリアルポート(115200bps)でJSONデータを受信
 
+## Rust版 (PoC)
+
+`firmware-rust/` に Rust (esp-idf-hal + esp32-nimble) での実現性検証 PoC がある。
+本番はこの Arduino 版のまま。詳細・未検証事項は [`firmware-rust/README.md`](./firmware-rust/README.md) 参照 (Refs #1)。
+
 ## ライセンス
 
 MIT License

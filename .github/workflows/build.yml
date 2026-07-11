@@ -3,18 +3,23 @@ name: Build and Deploy Firmware
 on:
   push:
     branches: [master]
+  pull_request:
+    branches: [master]
   workflow_dispatch:
 
 permissions:
+  contents: write
+  pull-requests: write
   pages: write
   id-token: write
 
 concurrency:
-  group: pages
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build:
+  build-arduino:
+    name: Build Arduino firmware (production)
     runs-on: ubuntu-latest
 
     steps:
@@ -39,16 +44,150 @@ jobs:
       - name: Build firmware
         run: pio run
 
-      - name: Prepare Pages content
+      - name: Upload firmware artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: arduino-firmware
+          path: |
+            .pio/build/m5stack-atom/bootloader.bin
+            .pio/build/m5stack-atom/partitions.bin
+            .pio/build/m5stack-atom/firmware.bin
+          if-no-files-found: error
+
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+  build-rust-poc:
+    name: Build Rust PoC firmware (experimental, non-blocking)
+    runs-on: ubuntu-latest
+    # PoC (Refs #1): esp-idf-sys の ESP-IDF clone / Xtensa toolchain 取得など
+    # 外部依存が多く、まだ枯れていない。失敗しても本番 Arduino 版の Pages 配信・
+    # PR merge をブロックしないようにしたいが、job-level の continue-on-error は
+    # 「workflow run 全体を失敗にしない」だけで、job 自身の check-run conclusion は
+    # failure のままになる (ci-workflows の verify_all_checks は個々の check-run を
+    # 見るのでこれで block された実績あり)。job を成功扱いにするには step-level の
+    # continue-on-error (「job を失敗にしない」) が必要 — 下の Build step に付与し、
+    # 後続 step は steps.build.outcome (continue-on-error に関係ない生の結果) で
+    # ガードする。
+    env:
+      # cache key と install コマンドの二重管理を避けるため一箇所にまとめる
+      ESPFLASH_VERSION: '4.5.0'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ESP-IDF 本体 (git clone) + xtensa-esp32-elf-gcc/cmake/ninja 等のツール一式。
+      # ESP_IDF_TOOLS_INSTALL_DIR=workspace (デフォルト) では firmware-rust/.embuild
+      # 配下に置かれる。.cargo/config.toml の ESP_IDF_VERSION が変わらない限り
+      # 毎回同じものなのでキャッシュが効く。
+      - name: Cache ESP-IDF tools/checkout
+        uses: actions/cache@v4
+        with:
+          path: firmware-rust/.embuild
+          key: esp-idf-tools-${{ runner.os }}-${{ hashFiles('firmware-rust/.cargo/config.toml') }}
+          restore-keys: |
+            esp-idf-tools-${{ runner.os }}-
+
+      - name: Install Xtensa Rust toolchain
+        uses: esp-rs/xtensa-toolchain@v1.7.0
+        with:
+          default: true
+          buildtargets: esp32
+          ldproxy: true
+
+      # cargo registry/git + target/ (esp-idf-template 自身の CI と同じ手法)。
+      # Build step が (step-level continue-on-error で) 失敗しても次回のために
+      # 保存する。
+      - name: Cache cargo registry/target
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: firmware-rust -> target
+          cache-on-failure: true
+
+      - name: Cache espflash binary
+        id: cache-espflash
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/espflash
+          key: espflash-${{ env.ESPFLASH_VERSION }}-${{ runner.os }}
+
+      - name: Install espflash
+        if: steps.cache-espflash.outputs.cache-hit != 'true'
+        run: cargo install espflash --version "$ESPFLASH_VERSION" --locked
+
+      - name: Build
+        id: build
+        continue-on-error: true
+        working-directory: firmware-rust
+        run: cargo build --release --locked
+
+      - name: Save merged flashable image
+        if: steps.build.outcome == 'success'
+        working-directory: firmware-rust
         run: |
-          mkdir -p _site/firmware
+          espflash save-image --chip esp32 --merge \
+            target/xtensa-esp32-espidf/release/ble-medical-gateway-rust-poc \
+            firmware-rust-merged.bin
+
+      - name: Upload firmware artifact
+        if: steps.build.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-poc-firmware
+          path: firmware-rust/firmware-rust-merged.bin
+          if-no-files-found: error
+
+      # 後続 job (pages) からの分岐用。ここまで到達した = ビルド成功。
+      - name: Mark built
+        if: steps.build.outcome == 'success'
+        id: built
+        run: echo "built=true" >> "$GITHUB_OUTPUT"
+
+    outputs:
+      built: ${{ steps.built.outputs.built }}
+
+  pages:
+    name: Assemble Pages site
+    needs: [build-arduino, build-rust-poc]
+    # build-rust-poc は Build step が step-level continue-on-error なので job 自体は
+    # 失敗せず、Rust ビルドが失敗しても本番 Arduino 版の Pages 配信は続行する
+    # (Rust セクションのみ index.html 側で非表示になる)。
+    if: always() && needs.build-arduino.result == 'success'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Arduino firmware
+        uses: actions/download-artifact@v4
+        with:
+          name: arduino-firmware
+          path: _site/firmware
+
+      - name: Prepare Arduino manifest + index.html
+        run: |
+          mkdir -p _site
           cp docs/index.html _site/
-          cp .pio/build/m5stack-atom/bootloader.bin _site/firmware/
-          cp .pio/build/m5stack-atom/partitions.bin _site/firmware/
-          cp .pio/build/m5stack-atom/firmware.bin _site/firmware/
-          VERSION=${{ steps.version.outputs.version }}
+          VERSION=${{ needs.build-arduino.outputs.version }}
           sed "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" docs/manifest.json > _site/manifest.json
           cat _site/manifest.json
+
+      - name: Download Rust PoC firmware
+        if: needs.build-rust-poc.outputs.built == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: rust-poc-firmware
+          path: _site/firmware-rust
+
+      - name: Prepare Rust PoC manifest
+        if: needs.build-rust-poc.outputs.built == 'true'
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          sed "s/\"version\": \"[^\"]*\"/\"version\": \"0.1.0-poc-$SHORT_SHA\"/" \
+            docs/manifest-rust.json > _site/manifest-rust.json
+          cat _site/manifest-rust.json
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
@@ -56,7 +195,9 @@ jobs:
           path: _site
 
   deploy:
-    needs: build
+    name: Deploy to GitHub Pages
+    needs: pages
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -65,3 +206,16 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+  auto-merge:
+    name: Auto Merge
+    needs: [build-arduino, build-rust-poc]
+    if: github.event_name == 'pull_request'
+    uses: ippoan/ci-workflows/.github/workflows/auto-merge.yml@main
+    with:
+      # "deploy" job は push:master のみで走り、PR (auto-merge) と同時に
+      # 走ることが無いため gate 対象から除外する (deploy job 自体の trigger
+      # 制約で守られている。走行中 deploy が merge で無音 cancel される事故
+      # (ippoan/rust-alc-api#405) の対象パターンとは異なる)。
+      deploy_gate_ignore: 'deploy'
+    secrets: inherit

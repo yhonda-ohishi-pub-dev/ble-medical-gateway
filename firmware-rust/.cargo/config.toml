@@ -1,0 +1,16 @@
+[build]
+target = "xtensa-esp32-espidf"
+
+[target.xtensa-esp32-espidf]
+linker = "ldproxy"
+
+[unstable]
+build-std = ["std", "panic_abort"]
+
+[env]
+MCU = "esp32"
+# esp-idf-template (cargo-generate.toml) が現在テスト対象にしている版に合わせる。
+# v5.3.1 (未テスト patch) だと esp-idf-hal 0.46.2 の bindgen 前提とヘッダ構造が
+# ずれ、rmt_receive_config_t_extra_* の struct 名不一致でビルドが壊れた
+# (Refs #1, PR #2 CI実測)。
+ESP_IDF_VERSION = "v5.5.3"

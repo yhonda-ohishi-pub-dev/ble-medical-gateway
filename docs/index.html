@@ -207,6 +207,35 @@
         </esp-web-install-button>
     </div>
 
+    <div class="card install-section" id="rust-poc-section" hidden style="background: linear-gradient(135deg, #757f9a 0%, #d7dde8 100%);">
+        <h2>Rust版 (PoC / 実験的)</h2>
+        <p style="font-size: 14px;">
+            体温計/血圧計の値デコードやLED/シリアルJSON出力を含まない、BLE scan/central接続の骨組みのみの検証用ビルド。
+            通常利用には上の「BLE Medical Gateway」を使ってください (<a href="https://github.com/ippoan/ble-medical-gateway/issues/1" target="_blank" style="color: #fff;">詳細 Issue #1</a>)。
+        </p>
+        <esp-web-install-button manifest="manifest-rust.json">
+            <button slot="activate">Install Rust PoC (experimental)</button>
+            <span slot="unsupported">
+                お使いのブラウザはWeb Serial APIに対応していません。<br>
+                Chrome, Edge, または Opera をお使いください。
+            </span>
+            <span slot="not-allowed">
+                シリアルポートへのアクセスが許可されていません。
+            </span>
+        </esp-web-install-button>
+    </div>
+    <script>
+        // Rust PoC ビルドは continue-on-error なので生成されないことがある。
+        // manifest-rust.json が存在する時だけセクションを表示する。
+        fetch('manifest-rust.json', { method: 'HEAD' })
+            .then((res) => {
+                if (res.ok) {
+                    document.getElementById('rust-poc-section').hidden = false;
+                }
+            })
+            .catch(() => {});
+    </script>
+
     <div class="card">
         <h2>書き込み後の動作確認</h2>
         <ul>
