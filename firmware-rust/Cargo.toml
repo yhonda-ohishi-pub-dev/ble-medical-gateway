@@ -1,0 +1,26 @@
+[package]
+name = "ble-medical-gateway-rust-poc"
+version = "0.1.0"
+edition = "2021"
+resolver = "2"
+rust-version = "1.77"
+
+[[bin]]
+name = "ble-medical-gateway-rust-poc"
+harness = false
+
+[profile.release]
+opt-level = "s"
+
+[profile.dev]
+debug = true
+opt-level = "z"
+
+[dependencies]
+esp-idf-svc = { version = "0.52", features = ["critical-section", "embassy-time-driver"] }
+esp32-nimble = "0.12"
+log = "0.4"
+anyhow = "1"
+
+[build-dependencies]
+embuild = "0.33"
