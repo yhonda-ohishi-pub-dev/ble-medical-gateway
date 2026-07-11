@@ -6,7 +6,8 @@
 //! characteristic notify 購読までを行う。値のデコード/JSON シリアライズは
 //! スコープ外 (Refs #1)。
 
-use esp32_nimble::{BLEAdvertisedData, BLEAdvertisedDevice, BLEDevice, BLEScan, BleUuid};
+use esp32_nimble::utilities::BleUuid;
+use esp32_nimble::{BLEAdvertisedData, BLEAdvertisedDevice, BLEDevice, BLEScan};
 use esp_idf_svc::hal::task::block_on;
 use log::*;
 
@@ -95,7 +96,7 @@ async fn async_main() -> anyhow::Result<()> {
 /// そのサービス UUID を返す。
 fn match_target_service(
     device: &BLEAdvertisedDevice,
-    data: &BLEAdvertisedData,
+    data: BLEAdvertisedData<&[u8]>,
 ) -> Option<BleUuid> {
     if device.rssi() < MIN_RSSI {
         return None;
@@ -104,9 +105,9 @@ fn match_target_service(
     let thermometer = BleUuid::from_uuid16(HEALTH_THERMOMETER_SERVICE);
     let blood_pressure = BleUuid::from_uuid16(BLOOD_PRESSURE_SERVICE);
 
-    if data.is_advertising_service(&[thermometer]) {
+    if data.is_advertising_service(&thermometer) {
         Some(thermometer)
-    } else if data.is_advertising_service(&[blood_pressure]) {
+    } else if data.is_advertising_service(&blood_pressure) {
         Some(blood_pressure)
     } else {
         None
