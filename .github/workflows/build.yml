@@ -99,10 +99,19 @@ jobs:
       # cargo registry/git + target/ (esp-idf-template 自身の CI と同じ手法)。
       # Build step が (step-level continue-on-error で) 失敗しても次回のために
       # 保存する。
+      #
+      # key に ESP_IDF_VERSION (.cargo/config.toml) のハッシュを明示的に足す:
+      # target/ 配下の esp-idf-sys build script が作る CMake ビルドディレクトリ
+      # (out/build/CMakeCache.txt) は ninja 等ツールの絶対パスを記憶するため、
+      # ESP_IDF_VERSION を変えた時に restore-key の prefix fallback で「古い
+      # ESP-IDF 向けの CMake キャッシュ」を誤って復元すると toolchain path 不一致
+      # で CMake configure が壊れる (実測: v5.3.1→v5.5.3 変更時に
+      # `ninja/1.11.1/ninja: no such file or directory`)。
       - name: Cache cargo registry/target
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: firmware-rust -> target
+          key: ${{ hashFiles('firmware-rust/.cargo/config.toml') }}
           cache-on-failure: true
 
       - name: Cache espflash binary
@@ -115,6 +124,14 @@ jobs:
       - name: Install espflash
         if: steps.cache-espflash.outputs.cache-hit != 'true'
         run: cargo install espflash --version "$ESPFLASH_VERSION" --locked
+
+      # 上の cache key 分離だけでは、バージョン切替の初回 1 回だけ古い restore-key
+      # (prefix fallback) が刺さって同じ問題が再発しうる。esp-idf-sys の CMake
+      # 中間生成物 (絶対パスを記憶する) だけを毎回消し、CMake configure を必ず
+      # 素の状態からやり直させることで根本的に防ぐ (crate 本体のコンパイル成果物は
+      # target/ の他の部分に残るのでキャッシュの恩恵はほぼ失わない)。
+      - name: Clear stale esp-idf-sys CMake build dir
+        run: rm -rf firmware-rust/target/xtensa-esp32-espidf/*/build/esp-idf-sys-*/out/build
 
       - name: Build
         id: build
