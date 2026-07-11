@@ -71,6 +71,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # ESP-IDF 本体 (git clone) + xtensa-esp32-elf-gcc/cmake/ninja 等のツール一式。
+      # ESP_IDF_TOOLS_INSTALL_DIR=workspace (デフォルト) では firmware-rust/.embuild
+      # 配下に置かれる。.cargo/config.toml の ESP_IDF_VERSION が変わらない限り
+      # 毎回同じものなのでキャッシュが効く。
+      - name: Cache ESP-IDF tools/checkout
+        uses: actions/cache@v4
+        with:
+          path: firmware-rust/.embuild
+          key: esp-idf-tools-${{ runner.os }}-${{ hashFiles('firmware-rust/.cargo/config.toml') }}
+          restore-keys: |
+            esp-idf-tools-${{ runner.os }}-
+
       - name: Install Xtensa Rust toolchain
         uses: esp-rs/xtensa-toolchain@v1.7.0
         with:
@@ -78,8 +90,25 @@ jobs:
           buildtargets: esp32
           ldproxy: true
 
+      # cargo registry/git + target/ (esp-idf-template 自身の CI と同じ手法)。
+      # continue-on-error job なので、cargo build が失敗した回でも次回のために
+      # 保存する。
+      - name: Cache cargo registry/target
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: firmware-rust -> target
+          cache-on-failure: true
+
+      - name: Cache espflash binary
+        id: cache-espflash
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/espflash
+          key: espflash-4.5.0-${{ runner.os }}
+
       - name: Install espflash
-        run: cargo install espflash --locked
+        if: steps.cache-espflash.outputs.cache-hit != 'true'
+        run: cargo install espflash --version 4.5.0 --locked
 
       - name: Build
         working-directory: firmware-rust
