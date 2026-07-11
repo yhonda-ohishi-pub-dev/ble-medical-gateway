@@ -61,11 +61,14 @@ jobs:
     name: Build Rust PoC firmware (experimental, non-blocking)
     runs-on: ubuntu-latest
     # PoC (Refs #1): esp-idf-sys の ESP-IDF clone / Xtensa toolchain 取得など
-    # 外部依存が多く、まだ CI 上での実ビルド検証ができていない。失敗しても
-    # 本番 Arduino 版の Pages 配信・PR merge をブロックしないよう
-    # continue-on-error にする (ci-workflows の auto-merge reusable の
-    # verify_all_checks は conclusion in [success, neutral, skipped] を許容)。
-    continue-on-error: true
+    # 外部依存が多く、まだ枯れていない。失敗しても本番 Arduino 版の Pages 配信・
+    # PR merge をブロックしないようにしたいが、job-level の continue-on-error は
+    # 「workflow run 全体を失敗にしない」だけで、job 自身の check-run conclusion は
+    # failure のままになる (ci-workflows の verify_all_checks は個々の check-run を
+    # 見るのでこれで block された実績あり)。job を成功扱いにするには step-level の
+    # continue-on-error (「job を失敗にしない」) が必要 — 下の Build step に付与し、
+    # 後続 step は steps.build.outcome (continue-on-error に関係ない生の結果) で
+    # ガードする。
     env:
       # cache key と install コマンドの二重管理を避けるため一箇所にまとめる
       ESPFLASH_VERSION: '4.5.0'
@@ -94,7 +97,7 @@ jobs:
           ldproxy: true
 
       # cargo registry/git + target/ (esp-idf-template 自身の CI と同じ手法)。
-      # continue-on-error job なので、cargo build が失敗した回でも次回のために
+      # Build step が (step-level continue-on-error で) 失敗しても次回のために
       # 保存する。
       - name: Cache cargo registry/target
         uses: Swatinem/rust-cache@v2
@@ -114,10 +117,13 @@ jobs:
         run: cargo install espflash --version "$ESPFLASH_VERSION" --locked
 
       - name: Build
+        id: build
+        continue-on-error: true
         working-directory: firmware-rust
         run: cargo build --release --locked
 
       - name: Save merged flashable image
+        if: steps.build.outcome == 'success'
         working-directory: firmware-rust
         run: |
           espflash save-image --chip esp32 --merge \
@@ -125,6 +131,7 @@ jobs:
             firmware-rust-merged.bin
 
       - name: Upload firmware artifact
+        if: steps.build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: rust-poc-firmware
@@ -133,6 +140,7 @@ jobs:
 
       # 後続 job (pages) からの分岐用。ここまで到達した = ビルド成功。
       - name: Mark built
+        if: steps.build.outcome == 'success'
         id: built
         run: echo "built=true" >> "$GITHUB_OUTPUT"
 
@@ -142,8 +150,9 @@ jobs:
   pages:
     name: Assemble Pages site
     needs: [build-arduino, build-rust-poc]
-    # build-rust-poc は continue-on-error なので、失敗しても本番 Arduino 版の
-    # Pages 配信は続行する (Rust セクションのみ index.html 側で非表示になる)。
+    # build-rust-poc は Build step が step-level continue-on-error なので job 自体は
+    # 失敗せず、Rust ビルドが失敗しても本番 Arduino 版の Pages 配信は続行する
+    # (Rust セクションのみ index.html 側で非表示になる)。
     if: always() && needs.build-arduino.result == 'success'
     runs-on: ubuntu-latest
 
