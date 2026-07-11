@@ -17,7 +17,7 @@ debug = true
 opt-level = "z"
 
 [dependencies]
-esp-idf-svc = { version = "0.52", features = ["critical-section", "embassy-time-driver"] }
+esp-idf-svc = { version = "0.52", features = ["critical-section"] }
 esp32-nimble = "0.12"
 log = "0.4"
 anyhow = "1"
